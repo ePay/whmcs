@@ -9,7 +9,8 @@ function epay_config()
 		"md5key" => array("FriendlyName" => "MD5 Key", "Type" => "text", "Size" => "20"),
 		"authsms" => array("FriendlyName" => "Auth SMS", "Type" => "text", "Size" => "20"),
 		"authmail" => array("FriendlyName" => "Auth Mail", "Type" => "text", "Size" => "20"),
-		"subscriptionfee" => array("FriendlyName" => "Add fee to subscription transactions", "Type" => "yesno")
+		"subscriptionfee" => array("FriendlyName" => "Add fee to subscription transactions", "Type" => "yesno"),
+		"captureonduedate" => array("FriendlyName" => "Wait to capture on due date", "Type" => "yesno")
 	);
 	return $configarray;
 }

@@ -13,7 +13,7 @@ function epay_invoice_creation_pre_email($vars)
 	$invoice_result = localAPI("getinvoice", $values, null);
 	
 	//Should this invoice be payed with ePay
-	if($results['paymentmethod'] == "epay")
+	if($invoice_result['paymentmethod'] == "epay")
 	{
 		$gateway = getGatewayVariables("epay");
 		
@@ -32,7 +32,7 @@ function epay_invoice_creation_pre_email($vars)
 		logActivity("epay_invoice_creation_pre_email: " . $currency_code);
 		
 		//Process if autocc is not disabled
-		if($client_result['disableautocc'] != "on")
+		if($client_result['disableautocc'] != "on" && $subscriptionid > 0)
 		{
 			$fee = 0;
 			
@@ -69,7 +69,12 @@ function epay_invoice_creation_pre_email($vars)
 			$epay_params['orderid'] = $vars['invoiceid'];
 			$epay_params['amount'] = ($invoice_result['total'] * 100) + $fee;
 			$epay_params['currency'] = $currency_code;
-			$epay_params['instantcapture'] = "1";
+			
+			if($gateway["captureonduedate"] == "no" OR array_key_exists("SERVER_ADDR", $_SERVER))
+				$epay_params['instantcapture'] = "1";
+			else
+				$epay_params['instantcapture'] = "0";
+				
 			$epay_params['fraud'] = "0";
 			$epay_params['transactionid'] = "-1";
 			$epay_params['pbsresponse'] = "-1";
@@ -95,8 +100,14 @@ function epay_invoice_creation_pre_email($vars)
 				}
 				
 				//Add payment to invoice
-				$transactionid = $result->transactionid;
-				addInvoicePayment($vars['invoiceid'], $transactionid, $invoice_result['total'] + ($fee / 100), ($fee / 100), "epay");
+				$transactionid = $soap_authorize_result->transactionid;
+				if($gateway["captureonduedate"] == "no" OR array_key_exists("SERVER_ADDR", $_SERVER))
+					addInvoicePayment($vars['invoiceid'], $transactionid, $invoice_result['total'] + ($fee / 100), ($fee / 100), "epay");
+				else
+				{
+					//Add to capture queue
+					mysql_query("INSERT INTO tblepay (invoiceid, txnid) VALUES ('" . $vars['invoiceid'] . "', " . $transactionid . ")");
+				}
 			}
 			else
 			{
@@ -115,9 +126,52 @@ function epay_invoice_payment_reminder($vars)
 	epay_invoice_creation_pre_email($new_vars);
 }
 
+function epay_daily_cron_job()
+{
+	$gateway = getGatewayVariables("epay");
+	
+	$query = mysql_query("SELECT * FROM tblinvoices INNER JOIN tblepay epay ON epay.invoiceid = tblinvoices.id WHERE tblinvoices.paymentmethod = 'epay' AND tblinvoices.status = 'Unpaid' AND (tblinvoices.duedate <= NOW() + INTERVAL 1 DAY) AND epay.`status` = 0");
+	
+	while($row = mysql_fetch_array($query))
+	{	
+		try
+		{
+			//Capture
+			$epay_params['merchantnumber'] = $gateway["merchantnumber"];
+			$epay_params['amount'] = ($row['total'] * 100);
+			$epay_params['transactionid'] = $row['txnid'];
+			$epay_params['group'] = "";
+			$epay_params['pbsResponse'] = "-1";
+			$epay_params['epayresponse'] = "-1";
+			
+			$soap = new SoapClient('https://ssl.ditonlinebetalingssystem.dk/remote/payment.asmx?WSDL');
+			$soap_capture_result = $soap->capture($epay_params);
+			
+			//Transaction OK
+			if($soap_capture_result->captureResult == true)
+			{
+				//OK capture
+				addInvoicePayment($row['invoiceid'], $row['txnid'], $row['total'], 0, "epay");
+				mysql_query("UPDATE tblepay SET status = 1 WHERE invoiceid = " . $row['invoiceid']);
+			}
+			else
+			{
+				//Error in capture
+				logActivity("epay_daily_cron_job: TXNID: " . $row['txnid'] . " PBS: " . $soap_capture_result->pbsresponse . " ePay: " . $soap_capture_result->epayresponse);
+				mysql_query("UPDATE tblepay SET status = 2 WHERE invoiceid = " . $row['invoiceid']);
+			}
+		}
+		catch(Exception $e)
+		{
+			logActivity("epay_daily_cron_job: " . $e->getMessage());
+		}
+	}
+}
+
 //Register hooks
 add_hook("InvoiceCreationPreEmail", 1, "epay_invoice_creation_pre_email");
 add_hook("InvoicePaymentReminder", 1, "epay_invoice_payment_reminder");
+add_hook("DailyCronJob", 1, "epay_daily_cron_job");
 
 //Convert currency to number
 function convertToEpayCurrency($cur)

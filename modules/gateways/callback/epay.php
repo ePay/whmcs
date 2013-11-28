@@ -60,6 +60,13 @@ else
 	//Save subscription information
 	if($_GET["subscriptionid"])
 	{
+		//Get client
+		$client_query = mysql_query("SELECT gatewayid FROM tblclients WHERE id = " . $invoice_result['userid']);
+  		$client_result = mysql_fetch_array($client_query);
+		
+		//Set subscription ID
+		$subscriptionid = $client_result['gatewayid'];
+		
 		//Get expire date
 		$soap = new SoapClient("https://ssl.ditonlinebetalingssystem.dk/remote/subscription.asmx?wsdl");
 		$soap_subscription_result = $soap->getsubscriptions(array("merchantnumber" => $gateway["merchantnumber"], "subscriptionid" => $_GET["subscriptionid"], "epayresponse" => -1));
@@ -74,6 +81,19 @@ else
 		
 		//Save subscriptionid
 		update_query("tblclients", array("gatewayid" => $_GET["subscriptionid"]), array("id" => $_GET["clientid"]));
+		
+		if($client_result['gatewayid'] != "")
+		{
+			try
+			{
+				$soap->deletesubscription(array("merchantnumber" => $gateway["merchantnumber"], "subscriptionid" => $_GET["subscriptionid"], "epayresponse" => - 1));
+			}
+			catch(Exception $e)
+			{
+				logActivity("epay_daily_cron_job: " . $e->getMessage());
+			}
+		}
+	
 	}
 }
 ?>
