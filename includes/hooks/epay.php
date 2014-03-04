@@ -1,12 +1,6 @@
 <?php
 if (!defined("WHMCS"))
 	die("This file cannot be accessed directly");
-	
-require("../../init.php");
-$whmcs->load_function('gateway');
-$whmcs->load_function('invoice');
-$whmcs->load_function('client');
-$whmcs->load_function('cc');
 
 function epay_invoice_creation_pre_email($vars)
 {
