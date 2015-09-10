@@ -1,5 +1,5 @@
 <?php
-include("../../../dbconnect.php");
+include("../../../init.php");
 include("../../../includes/functions.php");
 include("../../../includes/gatewayfunctions.php");
 include("../../../includes/invoicefunctions.php");
